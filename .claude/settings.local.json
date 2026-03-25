@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npx next:*)",
+      "Bash(sed -i '' 's/import type { NextConfig } from \"\"next\"\";//' /Users/rahulbansod01/Projects/CreatorBridge/next.config.mjs)",
+      "Bash(sed -i '' 's/const nextConfig: NextConfig = /const nextConfig = /' /Users/rahulbansod01/Projects/CreatorBridge/next.config.mjs)",
+      "Bash(npx dotenv:*)",
+      "Bash(pg_isready)",
+      "Bash(psql -l)",
+      "Bash(brew list:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm run:*)",
+      "Bash(npx tsx -e \":*)"
+    ]
+  }
+}

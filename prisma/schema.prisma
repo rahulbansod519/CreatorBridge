@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CREATOR
+  BRAND
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum ApplicationStatus {
+  PENDING
+  SHORTLISTED
+  HIRED
+  REJECTED
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  emailVerified   DateTime?
+  name            String?
+  image           String?
+  username        String?   @unique
+  passwordHash    String?
+  role            UserRole?
+  onboarded       Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  accounts        Account[]
+  sessions        Session[]
+  creatorProfile  CreatorProfile?
+  brandProfile    BrandProfile?
+  campaigns       Campaign[]      @relation("BrandCampaigns")
+  applications    Application[]   @relation("CreatorApplications")
+  sentInvites     Invite[]        @relation("BrandInvites")
+  receivedInvites Invite[]        @relation("CreatorInvites")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model CreatorProfile {
+  userId      String    @id
+  bio         String
+  niches      String[]
+  location    String?
+  mediaKitUrl String?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platforms   Platform[]
+}
+
+model Platform {
+  id             String         @id @default(cuid())
+  creatorId      String
+  name           String
+  handle         String
+  followersRange String
+  engagementRate Float
+  creator        CreatorProfile @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+}
+
+model BrandProfile {
+  userId      String  @id
+  companyName String
+  logo        String?
+  industry    String
+  website     String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Campaign {
+  id           String         @id @default(cuid())
+  brandId      String
+  title        String
+  description  String
+  niches       String[]
+  platforms    String[]
+  budgetMin    Int
+  budgetMax    Int
+  deadline     DateTime
+  status       CampaignStatus @default(DRAFT)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  brand        User           @relation("BrandCampaigns", fields: [brandId], references: [id])
+  applications Application[]
+  invites      Invite[]
+}
+
+model Application {
+  id            String            @id @default(cuid())
+  creatorId     String
+  campaignId    String
+  pitchMessage  String
+  status        ApplicationStatus @default(PENDING)
+  brandResponse String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  creator       User              @relation("CreatorApplications", fields: [creatorId], references: [id])
+  campaign      Campaign          @relation(fields: [campaignId], references: [id])
+
+  @@unique([creatorId, campaignId])
+}
+
+model Invite {
+  id         String       @id @default(cuid())
+  brandId    String
+  creatorId  String
+  campaignId String
+  message    String
+  status     InviteStatus @default(PENDING)
+  createdAt  DateTime     @default(now())
+
+  brand      User         @relation("BrandInvites", fields: [brandId], references: [id])
+  creator    User         @relation("CreatorInvites", fields: [creatorId], references: [id])
+  campaign   Campaign     @relation(fields: [campaignId], references: [id])
+}
