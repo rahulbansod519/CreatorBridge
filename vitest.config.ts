@@ -5,5 +5,12 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     environment: "node",
+    globals: true,
+    server: {
+      deps: {
+        // Allow next/server to be processed by vite (handles missing .js extensions)
+        inline: ["next", "next-auth"],
+      },
+    },
   },
 });
