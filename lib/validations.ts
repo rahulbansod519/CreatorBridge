@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CampaignStatus } from "@prisma/client";
 
 export const loginSchema = z.object({
   email: z.string().email("Invalid email"),
@@ -60,6 +61,12 @@ export const campaignSchema = z.object({
   path: ["deadline"],
 });
 
+export const campaignQuerySchema = z.object({
+  niche: z.string().optional(),
+  platform: z.string().optional(),
+  status: z.nativeEnum(CampaignStatus).optional(),
+});
+
 export const applicationSchema = z.object({
   campaignId: z.string().cuid(),
   pitchMessage: z
@@ -76,7 +83,7 @@ export const applicationStatusSchema = z.object({
 export const inviteSchema = z.object({
   creatorId: z.string().cuid(),
   campaignId: z.string().cuid(),
-  message: z.string().min(20, "Message too short"),
+  message: z.string().min(20, "Message too short").max(1000, "Message too long"),
 });
 
 export const creatorFiltersSchema = z.object({
@@ -95,6 +102,7 @@ export type PlatformInput = z.infer<typeof platformSchema>;
 export type PlatformWithIdInput = z.infer<typeof platformWithIdSchema>;
 export type BrandOnboardingInput = z.infer<typeof brandOnboardingSchema>;
 export type CampaignInput = z.infer<typeof campaignSchema>;
+export type CampaignQueryParams = z.infer<typeof campaignQuerySchema>;
 export type ApplicationInput = z.infer<typeof applicationSchema>;
 export type ApplicationStatusInput = z.infer<typeof applicationStatusSchema>;
 export type InviteInput = z.infer<typeof inviteSchema>;
