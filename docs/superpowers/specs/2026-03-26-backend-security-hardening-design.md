@@ -65,10 +65,21 @@ Replaces the copy-pasted `getBrandId()` / `getCreatorId()` helpers present in fo
 ```ts
 type AuthedHandler = (
   req: Request,
-  ctx: { userId: string; role: UserRole; params?: Record<string, string> }
+  ctx: { userId: string; role: UserRole }
 ) => Promise<NextResponse>;
 
-function withRole(role: UserRole, handler: AuthedHandler): NextApiHandler
+function withRole(role: UserRole, handler: AuthedHandler): (req: Request) => Promise<NextResponse>
+```
+
+**Dynamic route params:** Next.js App Router passes `params` as the second argument to route handlers (`GET(req, { params })`). `withRole` wraps only the `req` argument. In dynamic routes, the outer route handler still receives the standard `{ params }` second argument from Next.js — it is NOT passed through `withRole`. The developer accesses `params` in the outer function, then closes over the `userId` from the `withRole` context:
+
+```ts
+// Dynamic route: app/api/applications/[id]/route.ts
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  return withRole("BRAND", async (req, { userId }) => {
+    await updateApplicationStatus(params.id, userId, data);
+  })(req);
+}
 ```
 
 ### 3.2 `withAnyAuth(handler)`
@@ -83,8 +94,26 @@ Parses and validates URL search params via a Zod schema. Returns parsed data or 
 
 Unified error serializer for all API routes:
 - `ZodError` → `400` with `{ error: "Validation error", fields: { ... } }`
+- `ForbiddenError` (see 3.5) → `403` with `{ error: message }`
+- `ConflictError` (see 3.5) → `409` with `{ error: message }`
 - `Error` with known message → `400` with `{ error: message }`
 - Unknown → `500` with `{ error: "Internal server error" }`
+
+### 3.5 Typed Error Classes
+
+Two typed error classes are added to `lib/api-auth.ts` so that services can signal HTTP semantics without importing Next.js:
+
+```ts
+export class ForbiddenError extends Error {
+  constructor(msg = "Forbidden") { super(msg); this.name = "ForbiddenError"; }
+}
+
+export class ConflictError extends Error {
+  constructor(msg = "Conflict") { super(msg); this.name = "ConflictError"; }
+}
+```
+
+Services throw `ForbiddenError` for ownership violations and `ConflictError` for duplicate-record violations (e.g. "Already applied"). `handleApiError` maps these to `403` and `409` respectively, preserving the existing 409 behaviour in `POST /api/applications`.
 
 ---
 
@@ -95,15 +124,15 @@ Unified error serializer for all API routes:
 **Problem:** Any unauthenticated request can list all campaigns.
 **Fix:** Wrap with `withAnyAuth`. Returns `401` if no session.
 
-### 4.2 `PATCH /api/applications/[id]` — missing role check
+### 4.2 `PATCH /api/applications/[id]` — consolidate inline role check
 
-**Problem:** No role guard — any authenticated user can update application status.
-**Fix:** Wrap with `withRole("BRAND")`.
+**Problem:** A role check via the inline `getBrandId()` helper already exists, but it is duplicated code. The substantive security gap is the missing *ownership* check, described in 4.3. Wrapping with `withRole("BRAND")` consolidates the role check; 4.3 is the critical fix.
+**Fix:** Replace inline `getBrandId()` with `withRole("BRAND")` wrapper.
 
 ### 4.3 `updateApplicationStatus` — brand must own the campaign
 
 **Problem:** `features/applications/service.ts` updates by `id` alone with no ownership check.
-**Fix:** Before updating, fetch the application with its `campaign.brandId`. Assert `campaign.brandId === brandId`. Throw `403` if not.
+**Fix:** Before updating, fetch the application with its `campaign.brandId`. Assert `campaign.brandId === brandId`. Throw `new ForbiddenError("You do not own this campaign")` if not — `handleApiError` maps this to `403`.
 
 **Updated signature:**
 ```ts
@@ -113,7 +142,7 @@ updateApplicationStatus(id: string, brandId: string, data: ApplicationStatusInpu
 ### 4.4 `sendInvite` — campaign must belong to the brand
 
 **Problem:** A brand can send an invite referencing any campaign, including one they don't own.
-**Fix:** `features/invites/service.ts` fetches the campaign before creating the invite and asserts `campaign.brandId === brandId`. Throws `403` if not.
+**Fix:** `features/invites/service.ts` fetches the campaign before creating the invite and asserts `campaign.brandId === brandId`. Throws `new ForbiddenError("You do not own this campaign")` — mapped to `403` by `handleApiError`.
 
 **Updated signature:**
 ```ts
@@ -123,7 +152,12 @@ sendInvite(brandId: string, data: InviteInput)  // unchanged externally
 ### 4.5 Creator applying to a non-ACTIVE campaign
 
 **Problem:** `applyToCampaign` creates an application regardless of campaign status.
-**Fix:** Fetch the campaign first. Throw `400 "Campaign is not accepting applications"` if `status !== "ACTIVE"`.
+
+**Fix:** Add a `db.campaign.findUnique({ where: { id: data.campaignId } })` call at the top of `applyToCampaign` before the `db.application.create`. Throw `new Error("Campaign is not accepting applications")` if `campaign.status !== "ACTIVE"` or if the campaign doesn't exist.
+
+**Implementation note:** The current `applyToCampaign` signature takes `(creatorId: string, data: ApplicationInput)` where `data.campaignId` is available — no signature change is needed. The new DB fetch adds one round-trip.
+
+**Race condition acknowledgement:** The status check is best-effort, not transactional. A campaign could transition from ACTIVE to CLOSED between the check and the `create`. This is an acceptable trade-off — the unique constraint on `(campaignId, creatorId)` already guards against duplicate applications, and a closed-campaign application is low-risk and can be rejected by the brand. A database-level trigger or a serializable transaction would be needed for a hard guarantee, which is out of scope here.
 
 ---
 
@@ -139,7 +173,8 @@ Any arbitrary string passes through to Prisma. All GET routes with query params 
 
 **Routes affected:**
 - `GET /api/campaigns` — validate `status`, `niche`, `platform` params
-- `GET` discovery route — validate `CreatorFilters` params
+
+**Note:** Creator discovery (`features/discovery/service.ts`) is called directly from a Next.js server component (`app/dashboard/brand/creators/page.tsx`) via `requireSession`, not via an HTTP API route. No query-param parsing is needed there — the filters are passed as typed TypeScript arguments.
 
 ### 5.2 `inviteSchema` — add message max length
 
@@ -158,6 +193,8 @@ All route files currently use `e instanceof Error ? e.message : "Failed"`. This 
 
 Next.js `middleware.ts` with a sliding window in-memory limiter. No external dependencies. Keyed by client IP (`x-forwarded-for`, with fallback).
 
+**Runtime:** The middleware must export `export const config = { runtime: "nodejs" }` (or be configured to run in the Node.js runtime rather than Edge). Next.js Edge Runtime uses isolated V8 contexts per invocation — module-level `Map` state does not persist between requests in that environment, making in-memory rate limiting non-functional. Node.js runtime middleware runs in a persistent process where module-level state is shared across requests on the same instance.
+
 ### 6.2 Limits
 
 | Route pattern | Limit | Window |
@@ -173,7 +210,7 @@ Exceeded limit returns `429 Too Many Requests` with a `Retry-After` header (seco
 
 ### 6.4 Trade-off
 
-In-memory state is per-process — limits reset on server restart and do not share across multiple instances. This is appropriate for single-instance deployments (dev and small prod). A comment in `middleware.ts` documents the Upstash Redis upgrade path for horizontal scaling.
+In-memory state is per-process — limits reset on server restart and do not share across multiple instances. This is appropriate for single-instance deployments (dev and small prod, running in Node.js runtime). **This will not work on Vercel's serverless/edge deployment** without an external store. A comment in `middleware.ts` documents the Upstash Redis upgrade path: swap the in-memory `Map` for `@upstash/ratelimit` with a one-line store change — the surrounding logic stays the same.
 
 ---
 
@@ -182,7 +219,7 @@ In-memory state is per-process — limits reset on server restart and do not sha
 | File | Change type |
 |------|-------------|
 | `middleware.ts` | **New** — rate limiting |
-| `lib/api-auth.ts` | **New** — `withRole`, `withAnyAuth`, `parseQueryParams`, `handleApiError` |
+| `lib/api-auth.ts` | **New** — `withRole`, `withAnyAuth`, `parseQueryParams`, `handleApiError`, `ForbiddenError`, `ConflictError` |
 | `lib/validations.ts` | **Modified** — `inviteSchema` add `.max(1000)` |
 | `app/api/campaigns/route.ts` | **Modified** — `withAnyAuth` on GET, Zod query params, `handleApiError` |
 | `app/api/campaigns/[id]/route.ts` | **Modified** — `withRole("BRAND")` on PATCH, `handleApiError` |
