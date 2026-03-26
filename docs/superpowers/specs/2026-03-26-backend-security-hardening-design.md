@@ -193,7 +193,7 @@ All route files currently use `e instanceof Error ? e.message : "Failed"`. This 
 
 ### 6.1 Implementation
 
-Next.js `middleware.ts` with a sliding window in-memory limiter. No external dependencies. Keyed by client IP (`x-forwarded-for`, with fallback).
+Next.js `middleware.ts` with a **fixed-window** in-memory limiter (not sliding window — see trade-off note). No external dependencies. Keyed by client IP (`x-forwarded-for`, with fallback).
 
 **Runtime:** The middleware must export `export const runtime = "nodejs"` as a top-level module export (not inside `config` — that field is reserved for the `matcher`). Next.js Edge Runtime uses isolated V8 contexts per invocation — module-level `Map` state does not persist between requests in that environment, making in-memory rate limiting non-functional. Node.js runtime middleware runs in a persistent process where module-level state is shared across requests on the same instance.
 
