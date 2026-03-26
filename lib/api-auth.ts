@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError, type ZodTypeAny, type infer as ZodInfer } from "zod";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { UserRole } from "@prisma/client";
@@ -37,6 +38,14 @@ export function handleApiError(e: unknown): NextResponse {
   }
   if (e instanceof ConflictError) {
     return NextResponse.json({ error: e.message }, { status: 409 });
+  }
+  if (
+    e instanceof Prisma.PrismaClientKnownRequestError ||
+    e instanceof Prisma.PrismaClientUnknownRequestError ||
+    e instanceof Prisma.PrismaClientInitializationError
+  ) {
+    console.error("[api] Database error:", e.message);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
   if (e instanceof Error) {
     return NextResponse.json({ error: e.message }, { status: 400 });
