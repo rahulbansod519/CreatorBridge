@@ -86,6 +86,11 @@ export const inviteSchema = z.object({
   message: z.string().min(20, "Message too short").max(1000, "Message too long"),
 });
 
+// Invite response schema — ACCEPTED/DECLINED only (creator action, not PENDING)
+export const inviteStatusSchema = z.object({
+  status: z.enum(["ACCEPTED", "DECLINED"]),
+});
+
 export const creatorFiltersSchema = z.object({
   niche: z.string().optional(),
   platform: z.string().optional(),
@@ -106,4 +111,5 @@ export type CampaignQueryParams = z.infer<typeof campaignQuerySchema>;
 export type ApplicationInput = z.infer<typeof applicationSchema>;
 export type ApplicationStatusInput = z.infer<typeof applicationStatusSchema>;
 export type InviteInput = z.infer<typeof inviteSchema>;
+export type InviteStatusInput = z.infer<typeof inviteStatusSchema>;
 export type CreatorFilters = z.infer<typeof creatorFiltersSchema>;

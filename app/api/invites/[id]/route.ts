@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { updateInviteStatus } from "@/features/invites/service";
 import { withRole } from "@/lib/api-auth";
-import { z } from "zod";
-
-const inviteStatusSchema = z.object({
-  status: z.enum(["ACCEPTED", "DECLINED"]),
-});
+import { inviteStatusSchema } from "@/lib/validations";
 
 export async function PATCH(
   req: Request,
