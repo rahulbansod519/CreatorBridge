@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// NOTE: In-memory rate limiter — works for single-process Node.js deployments.
-// Limits reset on server restart and are NOT shared across multiple instances.
+// NOTE: In-memory FIXED-WINDOW rate limiter (not sliding window) — works for
+// single-process Node.js deployments. Limits reset on server restart and are
+// NOT shared across multiple instances.
 // For Vercel or other serverless/multi-instance deployments, replace `store`
 // with @upstash/ratelimit:
 //   import { Ratelimit } from "@upstash/ratelimit";
