@@ -1,29 +1,16 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
 import { updateApplicationStatus } from "@/features/applications/service";
 import { applicationStatusSchema } from "@/lib/validations";
+import { withRole } from "@/lib/api-auth";
 
-async function getBrandId(): Promise<string | null> {
-  const session = await auth();
-  if (!session?.user?.id) return null;
-  if (session.user.role === "BRAND") return session.user.id;
-  const user = await db.user.findUnique({ where: { id: session.user.id }, select: { role: true } });
-  return user?.role === "BRAND" ? session.user.id : null;
-}
-
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  try {
-    const brandId = await getBrandId();
-    if (!brandId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+export async function PATCH(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  return withRole("BRAND", async (req, { userId }) => {
     const body = await req.json();
     const data = applicationStatusSchema.parse(body);
-    await updateApplicationStatus(params.id, data);
+    await updateApplicationStatus(params.id, userId, data);
     return NextResponse.json({ success: true });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "Failed";
-    return NextResponse.json({ error: msg }, { status: 400 });
-  }
+  })(req);
 }
