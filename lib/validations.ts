@@ -16,11 +16,23 @@ export const platformSchema = z.object({
   engagementRate: z.coerce.number().min(0).max(100),
 });
 
+export const platformWithIdSchema = platformSchema.extend({
+  id: z.string().optional(),
+});
+
 export const creatorOnboardingSchema = z.object({
   bio: z.string().min(20, "Bio must be at least 20 characters"),
   niches: z.array(z.string()).min(1, "Select at least one niche"),
   location: z.string().optional(),
   platforms: z.array(platformSchema).min(1, "Add at least one platform"),
+  mediaKitUrl: z.string().optional(),
+});
+
+export const creatorProfileUpdateSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters").optional(),
+  bio: z.string().min(20, "Bio must be at least 20 characters"),
+  niches: z.array(z.string()).min(1, "Select at least one niche"),
+  location: z.string().optional(),
   mediaKitUrl: z.string().optional(),
 });
 
@@ -78,6 +90,9 @@ export const creatorFiltersSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type CreatorOnboardingInput = z.infer<typeof creatorOnboardingSchema>;
+export type CreatorProfileUpdateInput = z.infer<typeof creatorProfileUpdateSchema>;
+export type PlatformInput = z.infer<typeof platformSchema>;
+export type PlatformWithIdInput = z.infer<typeof platformWithIdSchema>;
 export type BrandOnboardingInput = z.infer<typeof brandOnboardingSchema>;
 export type CampaignInput = z.infer<typeof campaignSchema>;
 export type ApplicationInput = z.infer<typeof applicationSchema>;
