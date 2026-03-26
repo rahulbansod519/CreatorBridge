@@ -119,10 +119,10 @@ Services throw `ForbiddenError` for ownership violations and `ConflictError` for
 
 ## 4. Authorization Gap Fixes
 
-### 4.1 `GET /api/campaigns` — require authentication
+### 4.1 `GET /api/campaigns` and `GET /api/campaigns/[id]` — require authentication
 
-**Problem:** Any unauthenticated request can list all campaigns.
-**Fix:** Wrap with `withAnyAuth`. Returns `401` if no session.
+**Problem:** Both handlers return campaign data (including applications and creator profiles in the `[id]` case) to any unauthenticated caller.
+**Fix:** Wrap both with `withAnyAuth`. Returns `401` if no session. Note: `GET /api/campaigns/[id]` must follow the dynamic-route param pattern described in Section 3.1 — `params.id` is accessed in the outer function, `withAnyAuth` provides `userId`.
 
 ### 4.2 `PATCH /api/applications/[id]` — consolidate inline role check
 
@@ -154,6 +154,8 @@ sendInvite(brandId: string, data: InviteInput)  // unchanged externally
 **Problem:** `applyToCampaign` creates an application regardless of campaign status.
 
 **Fix:** Add a `db.campaign.findUnique({ where: { id: data.campaignId } })` call at the top of `applyToCampaign` before the `db.application.create`. Throw `new Error("Campaign is not accepting applications")` if `campaign.status !== "ACTIVE"` or if the campaign doesn't exist.
+
+Additionally, `applyToCampaign` must catch the Prisma unique-constraint error on `db.application.create` and re-throw `new ConflictError("Already applied")`. This replaces the current raw string-match in the route handler (`e.message.includes("Unique constraint")`). Without this change, `handleApiError` will never receive a `ConflictError` from this path — the Prisma error will fall through to the generic `500` branch, breaking the existing 409 behaviour.
 
 **Implementation note:** The current `applyToCampaign` signature takes `(creatorId: string, data: ApplicationInput)` where `data.campaignId` is available — no signature change is needed. The new DB fetch adds one round-trip.
 
@@ -193,7 +195,7 @@ All route files currently use `e instanceof Error ? e.message : "Failed"`. This 
 
 Next.js `middleware.ts` with a sliding window in-memory limiter. No external dependencies. Keyed by client IP (`x-forwarded-for`, with fallback).
 
-**Runtime:** The middleware must export `export const config = { runtime: "nodejs" }` (or be configured to run in the Node.js runtime rather than Edge). Next.js Edge Runtime uses isolated V8 contexts per invocation — module-level `Map` state does not persist between requests in that environment, making in-memory rate limiting non-functional. Node.js runtime middleware runs in a persistent process where module-level state is shared across requests on the same instance.
+**Runtime:** The middleware must export `export const runtime = "nodejs"` as a top-level module export (not inside `config` — that field is reserved for the `matcher`). Next.js Edge Runtime uses isolated V8 contexts per invocation — module-level `Map` state does not persist between requests in that environment, making in-memory rate limiting non-functional. Node.js runtime middleware runs in a persistent process where module-level state is shared across requests on the same instance.
 
 ### 6.2 Limits
 
@@ -222,7 +224,7 @@ In-memory state is per-process — limits reset on server restart and do not sha
 | `lib/api-auth.ts` | **New** — `withRole`, `withAnyAuth`, `parseQueryParams`, `handleApiError`, `ForbiddenError`, `ConflictError` |
 | `lib/validations.ts` | **Modified** — `inviteSchema` add `.max(1000)` |
 | `app/api/campaigns/route.ts` | **Modified** — `withAnyAuth` on GET, Zod query params, `handleApiError` |
-| `app/api/campaigns/[id]/route.ts` | **Modified** — `withRole("BRAND")` on PATCH, `handleApiError` |
+| `app/api/campaigns/[id]/route.ts` | **Modified** — `withAnyAuth` on GET, `withRole("BRAND")` on PATCH/DELETE, `handleApiError` |
 | `app/api/applications/route.ts` | **Modified** — `withRole` replaces `getCreatorId()`, `handleApiError` |
 | `app/api/applications/[id]/route.ts` | **Modified** — `withRole("BRAND")`, pass `brandId` to service |
 | `app/api/invites/route.ts` | **Modified** — `withRole("BRAND")` replaces `getBrandId()`, `handleApiError` |
